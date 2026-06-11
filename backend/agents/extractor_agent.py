@@ -13,7 +13,7 @@ def extract_from_transcript(transcript: str) -> dict:
 
     prompt = f"""You are an expert meeting analyst. Analyze the following meeting transcript and extract structured information.
 
-Return ONLY a valid JSON object with this exact structure (no markdown, no explanation):
+Return ONLY a valid JSON object with this exact structure (no markdown, no explanation, no code fences):
 {{
   "decisions": [
     {{"decision": "string describing the decision", "owner": "name or null"}}
@@ -32,21 +32,34 @@ Rules:
 - Extract ALL action items with owners and deadlines where mentioned
 - Extract ALL risks, blockers, concerns raised
 - If owner or deadline is not mentioned, use null
-- Return valid JSON only
+- If nothing found in a category, return empty array []
+- Return valid JSON only, no markdown fences, no explanation
 
 MEETING TRANSCRIPT:
 {transcript}"""
 
-    message = client.messages.create(
-        model="claude-sonnet-4-5",
-        max_tokens=1500,
-        messages=[{"role": "user", "content": prompt}]
-    )
+    try:
+        message = client.messages.create(
+            model="claude-sonnet-4-5",
+            max_tokens=1500,
+            messages=[{{"role": "user", "content": prompt}}]
+        )
 
-    raw = message.content[0].text.strip()
+        raw = message.content[0].text.strip()
 
-    # Strip markdown code fences if present
-    raw = re.sub(r"^```(?:json)?\n?", "", raw)
-    raw = re.sub(r"\n?```$", "", raw)
+        # Strip markdown code fences if present
+        raw = re.sub(r"^```(?:json)?\n?", "", raw)
+        raw = re.sub(r"\n?```$", "", raw)
+        raw = raw.strip()
 
-    return json.loads(raw)
+        if not raw:
+            return {{"decisions": [], "action_items": [], "risks": [], "key_topics": []}}
+
+        return json.loads(raw)
+
+    except json.JSONDecodeError as e:
+        print(f"JSON parse error: {{e}}, raw response: {{raw[:200]}}")
+        return {{"decisions": [], "action_items": [], "risks": [], "key_topics": []}}
+    except Exception as e:
+        print(f"Extractor error: {{e}}")
+        return {{"decisions": [], "action_items": [], "risks": [], "key_topics": []}}
